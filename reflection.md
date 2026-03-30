@@ -46,6 +46,9 @@
 - Describe one tradeoff your scheduler makes.
 - Why is that tradeoff reasonable for this scenario?
 
+- **Overlap-based conflict detection vs. “same start time” only:** `Scheduler.detect_time_conflicts` flags any two scheduled items whose intervals **overlap** on that day (using half-open ranges in spirit: overlap if one starts before the other ends), not only when `start_time` is identical. That catches more realistic double-bookings (e.g., 2:00–2:20 vs 2:10–2:30) at the cost of slightly more comparison work and the possibility of **false positives** if the owner’s real life allows overlap (e.g., automated feeder while away). For PawPal+ as a planning assistant, preferring “warn on overlap” is reasonable: it’s conservative, stays easy to explain, and still returns **warnings only** so the app never crashes when a conflict exists.
+- **Pairwise O(n²) checks:** For a typical day, n is small, so comparing every pair is simple and fast enough. A more scalable approach would sort by start time and sweep once (O(n log n)), which is better at very large n but harder to read and unnecessary for household-scale schedules.
+
 ---
 
 ## 3. AI Collaboration
