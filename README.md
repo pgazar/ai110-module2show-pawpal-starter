@@ -1,59 +1,132 @@
-# PawPal+ (Module 2 Project)
+# 🐾 PawPal+
 
-You are building **PawPal+**, a Streamlit app that helps a pet owner plan care tasks for their pet.
+A Streamlit app that helps a busy pet owner plan daily care tasks for one or more pets — considering time constraints, task priorities, and preferred schedules.
 
-## Scenario
+---
 
-A busy pet owner needs help staying consistent with pet care. They want an assistant that can:
+## 📸 Demo
 
-- Track pet care tasks (walks, feeding, meds, enrichment, grooming, etc.)
-- Consider constraints (time available, priority, owner preferences)
-- Produce a daily plan and explain why it chose that plan
+<a href="/course_images/ai110/pawpal_screenshot.png" target="_blank">
+  <img src='/course_images/ai110/pawpal_screenshot.png' title='PawPal App' width='' alt='PawPal App' class='center-block' />
+</a>
 
-Your job is to design the system first (UML), then implement the logic in Python, then connect it to the Streamlit UI.
+---
 
-## Smarter Scheduling
+## ✨ Features
 
-The backend in `pawpal_system.py` adds helpers on top of basic “pack tasks into availability blocks” planning:
+### Core planning
+- **Owner + multi-pet setup** — enter your name, daily time budget, and day start hour; add as many pets as you need, each with a name and species
+- **Per-pet task lists** — each task is assigned to a specific pet; switching the pet selector in the Tasks section instantly shows that pet's tasks
+- **Quick-add presets** — one-click buttons for the eight most common care tasks (walk, feeding, medication, grooming, enrichment toy, vet appointment, bath, nail trim)
+- **Custom task form** — add any task with a title, duration, priority (low / medium / high), and optional notes
+- **Edit and delete** — every task can be updated or removed at any time
 
-- **Sort by preferred time** — `Scheduler.sort_by_time()` orders tasks using each `Task.time` string (`'HH:MM'`) parsed to a real clock time (so sorting matches real chronology, not string order).
-- **Filter tasks** — `Scheduler.filter_tasks()` can narrow tasks by **pet name** and/or **completed vs still due** on a chosen date.
-- **Recurring completion** — `Scheduler.mark_task_complete()` marks a task done for a day and, for **daily** or **weekly** recurrence, creates a **new** task instance for the next due date (`timedelta` +1 day or +7 days), while retiring the old row as completed.
-- **Conflict warnings** — `Scheduler.detect_time_conflicts()` scans `DailyPlan.scheduled_items` for **overlapping** time ranges (same pet or different pets) and returns **warning strings only**; `generate_daily_plan()` stores them on `DailyPlan.conflict_warnings` without failing.
+### Smarter scheduling algorithms
+- **Greedy scheduler** — `Scheduler.build_plan()` sorts tasks, fits as many as possible into the owner's time budget, and records a plain-English reason for every include or skip decision
+- **Sorting by priority** — `sort_by_priority()` uses `lambda t: (-t.priority_rank, t.duration_minutes)` to place high-priority tasks first, with shortest-duration as the tiebreaker so more tasks fit
+- **Sorting by time** — `sort_by_time()` uses `lambda t: t.preferred_time` to place tasks in chronological order by preferred start time; tasks with no time preference fall to the end, ordered by priority
+- **Two sort modes in the UI** — a radio button lets the owner choose "By priority" or "By preferred time" both for the task list preview and for plan generation
+- **Conflict detection** — `detect_conflicts()` checks every pair of scheduled tasks for overlapping time windows using the condition `A.start < B.end AND B.start < A.end`; conflicts are shown as `st.warning` banners immediately below the build button so the owner sees them before scrolling to the schedule
+- **Filtering** — `filter_by_completion()` and `filter_by_pet()` let the scheduler show only pending or done tasks, or only one pet's tasks, without modifying the underlying list
 
-See `main.py` for a terminal demo of sorting, filtering, conflicts, and plan generation.
+### Recurring tasks
+- Each `Task` has a `frequency` field: `"once"`, `"daily"`, or `"weekly"`
+- When `mark_complete()` is called on a recurring task, it automatically returns a new `Task` instance for the next occurrence using Python's `timedelta`:
+  - Daily → `due_date + timedelta(days=1)`
+  - Weekly → `due_date + timedelta(days=7)`
+- The follow-up task inherits all attributes (title, priority, preferred time, pet name) but starts with `completed=False`
 
-## What you will build
+### Saved plans
+- Every plan is auto-saved to session state under the pet's name the moment it is built
+- The **Saved Plans** section displays one tab per pet — switch between Mochi's plan and Pepper's plan instantly without rebuilding
+- Rebuilding a plan for the same pet overwrites the previous save
+- Deleting a pet also removes their saved plan
 
-Your final app should:
+### Transparency
+- Every scheduling decision is logged in plain English in `DailyPlan.reasoning`
+- The "Why this plan?" expander in the UI colour-codes each line: ✅ scheduled, ⏭️ skipped, ⚠️ conflict
+- Skipped tasks are listed separately so nothing is silently dropped
 
-- Let a user enter basic owner + pet info
-- Let a user add/edit tasks (duration + priority at minimum)
-- Generate a daily schedule/plan based on constraints and priorities
-- Display the plan clearly (and ideally explain the reasoning)
-- Include tests for the most important scheduling behaviors
+---
 
-## Getting started
+## 🗂 Project structure
+
+```
+pawpal_system.py        # All backend logic: models + Scheduler class
+app.py                  # Streamlit UI
+main.py                 # CLI demo: sorting, filtering, recurrence, conflicts
+tests/
+  test_pawpal.py        # 61 pytest tests
+uml_class_diagram.md    # Mermaid source + change log
+uml_final.png           # Rendered UML diagram
+reflection.md           # Design decisions and AI collaboration notes
+README.md               # This file
+```
+
+---
+
+## 🚀 Getting started
 
 ### Setup
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Suggested workflow
+### Run the app
 
-1. Read the scenario carefully and identify requirements and edge cases.
-2. Draft a UML diagram (classes, attributes, methods, relationships).
-3. Convert UML into Python class stubs (no logic yet).
-4. Implement scheduling logic in small increments.
-5. Add tests to verify key behaviors.
-6. Connect your logic to the Streamlit UI in `app.py`.
-7. Refine UML so it matches what you actually built.
+```bash
+streamlit run app.py
+```
 
-## Test
-What the tests cover: tests/test_pawpal.py checks core scheduling-related behavior: one-off task completion and due state; adding tasks to a pet; Scheduler.sort_by_time() chronological order and name tie-breaking; daily recurring completion spawning the next-day task via mark_task_complete(); and detect_time_conflicts() flagging overlapping scheduled time ranges (duplicate windows).
+### Run the CLI demo
 
-Confidence level (reliability): ★★★☆☆ (3/5) — All listed tests pass locally; coverage focuses on a small set of behaviors and does not exhaust generate_daily_plan, filter_tasks, weekly recurrence, or UI integration. Raise the rating as you add tests for those paths and real edge cases.
+```bash
+python3 main.py
+```
+
+### Run the tests
+
+```bash
+python -m pytest tests/test_pawpal.py -v
+```
+
+---
+
+## 🧱 Architecture
+
+The backend is a single file — `pawpal_system.py` — with five dataclasses and one class:
+
+| Class | Responsibility |
+|---|---|
+| `Owner` | Name + daily time budget |
+| `Pet` | Name, species, optional owner, personal task list |
+| `Task` | Care action with title, duration, priority, recurrence, and preferred time |
+| `ScheduledTask` | A `Task` placed at a concrete start time |
+| `DailyPlan` | Scheduler output: scheduled tasks, skipped tasks, reasoning |
+| `Scheduler` | Sorting, filtering, conflict detection, and greedy plan building |
+
+The module-level `build_plan()` function is a thin wrapper around `Scheduler` kept for backwards compatibility.
+
+---
+
+## 🧪 Tests
+
+61 tests in `tests/test_pawpal.py` across nine test classes:
+
+| Class | What it tests |
+|---|---|
+| `TestModelValidation` | Invalid inputs raise `ValueError` immediately |
+| `TestBuildPlan` | Core greedy scheduling contract |
+| `TestScheduledTask` | Time string formatting (AM/PM) |
+| `TestSortByTime` | Chronological sort, no mutation |
+| `TestFiltering` | Completion status and pet name filters |
+| `TestConflictDetection` | Overlap detection edge cases |
+| `TestRecurringTasks` | `timedelta` recurrence, attribute inheritance |
+| `TestTaskCompletion` | `mark_complete()` flag behaviour |
+| `TestPetTaskAddition` | `add_task()` / `task_count()` |
+| `TestSortingCorrectness` | ✅ Checkpoint: chronological order verified |
+| `TestRecurrenceLogic` | ✅ Checkpoint: daily task → next-day follow-up |
+| `TestConflictFlagging` | ✅ Checkpoint: duplicate start times flagged |

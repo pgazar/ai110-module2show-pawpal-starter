@@ -1,227 +1,169 @@
-from __future__ import annotations
+"""
+main.py -- Terminal demo for PawPal+ logic.
 
-from datetime import date, time
+Demonstrates:
+  1. Tasks added out of order (mixed priority, preferred_time, pet)
+  2. sort_by_priority() using lambda key on (-priority_rank, duration_minutes)
+  3. sort_by_time()     using lambda key on preferred_time integer
+  4. filter_by_completion() and filter_by_pet()
+  5. Recurring task auto-spawn via timedelta
+  6. Conflict detection -- two tasks at the same time trigger a warning
 
-from pawpal_system import (
-    AvailabilityBlock,
-    Owner,
-    Pet,
-    RecurrenceRule,
-    ScheduledItem,
-    Scheduler,
-    Task,
-)
+Run: python3 main.py
+"""
 
+from datetime import date
+from pawpal_system import Owner, Pet, Task, Scheduler, ScheduledTask
 
-def build_sample_owner() -> Owner:
-    owner = Owner(name="Alex")
+DIV  = "=" * 62
+DIV2 = "-" * 62
 
-    owner.add_availability_block(
-        AvailabilityBlock(
-            id="morning",
-            label="Morning (before work)",
-            start_time=time(8, 0),
-            end_time=time(9, 30),
-            capacity_minutes=90,
-        )
-    )
-    owner.add_availability_block(
-        AvailabilityBlock(
-            id="lunch",
-            label="Lunch break",
-            start_time=time(12, 0),
-            end_time=time(12, 30),
-            capacity_minutes=30,
-        )
-    )
-    owner.add_availability_block(
-        AvailabilityBlock(
-            id="evening",
-            label="Evening",
-            start_time=time(18, 0),
-            end_time=time(19, 0),
-            capacity_minutes=60,
-        )
-    )
+# ── 1. Owner and two pets ─────────────────────────────────────────────────────
 
-    return owner
+jordan = Owner(name="Jordan", available_minutes=120)
+mochi  = Pet(name="Mochi",  species="dog", owner=jordan)
+pepper = Pet(name="Pepper", species="cat", owner=jordan)
 
+# ── 2. Tasks added OUT OF ORDER ───────────────────────────────────────────────
 
-def main() -> None:
-    today = date.today()
+tasks = [
+    Task("Enrichment toy",  duration_minutes=15, priority="low",
+         preferred_time=1020, pet_name="Mochi",  frequency="once"),        # 5 PM
 
-    owner = build_sample_owner()
+    Task("Morning meds",    duration_minutes=5,  priority="high",
+         preferred_time=480,  pet_name="Mochi",  frequency="daily",
+         due_date=date.today()),                                            # 8 AM
 
-    pet1 = Pet(id="p1", name="Bella", species="Dog")
-    pet2 = Pet(id="p2", name="Milo", species="Cat")
-    owner.add_pet(pet1)
-    owner.add_pet(pet2)
+    Task("Afternoon groom", duration_minutes=20, priority="medium",
+         preferred_time=840,  pet_name="Pepper", frequency="weekly",
+         due_date=date.today()),                                            # 2 PM
 
-    walk_rule = RecurrenceRule(frequency="daily", times_per_day=2)
-    groom_rule = RecurrenceRule(frequency="weekly", days_of_week=["Sat"], times_per_day=1)
+    Task("Lunch feeding",   duration_minutes=10, priority="high",
+         preferred_time=720,  pet_name="Mochi",  frequency="daily",
+         due_date=date.today()),                                            # 12 PM
 
-    pet1.add_task(
-        Task(
-            id="t1",
-            pet_id="p1",
-            name="Walk",
-            description="A brisk walk around the neighborhood.",
-            category="walk",
-            time="12:30",
-            duration_minutes=30,
-            priority=5,
-            recurrence=walk_rule,
-        )
-    )
-    pet1.add_task(
-        Task(
-            id="t2",
-            pet_id="p1",
-            name="Brush coat",
-            description="Quick brushing session to reduce shedding.",
-            category="grooming",
-            time="09:00",
-            duration_minutes=15,
-            priority=2,
-            recurrence=groom_rule,
-        )
-    )
-    pet2.add_task(
-        Task(
-            id="t3",
-            pet_id="p2",
-            name="Play time",
-            description="Interactive play with a wand toy.",
-            category="enrichment",
-            time="18:30",
-            duration_minutes=20,
-            priority=4,
-            recurrence=RecurrenceRule(frequency="daily", times_per_day=1),
-        )
-    )
-    pet2.add_task(
-        Task(
-            id="t4",
-            pet_id="p2",
-            name="Give meds",
-            description="Daily medication with a treat.",
-            category="meds",
-            time="08:10",
-            duration_minutes=5,
-            priority=5,
-            recurrence=RecurrenceRule(frequency="daily", times_per_day=1),
-        )
-    )
+    Task("Evening walk",    duration_minutes=30, priority="high",
+         preferred_time=1080, pet_name="Mochi",  frequency="daily",
+         due_date=date.today()),                                            # 6 PM
 
-    scheduler = Scheduler()
+    Task("Nail trim",       duration_minutes=10, priority="low",
+         preferred_time=None, pet_name="Pepper", frequency="once"),        # no pref
 
-    # --- Sorting + filtering demo (Module 2 target features) ---
-    # Add a couple more tasks out of order by time to verify sort_by_time().
-    pet1.add_task(
-        Task(
-            id="t5",
-            pet_id="p1",
-            name="Evening potty break",
-            description="Quick outdoor break before bed.",
-            category="walk",
-            time="21:30",
-            duration_minutes=10,
-            priority=3,
-            recurrence=RecurrenceRule(frequency="daily", times_per_day=1),
-        )
-    )
-    pet2.add_task(
-        Task(
-            id="t6",
-            pet_id="p2",
-            name="Feed dinner",
-            description="Evening meal.",
-            category="feeding",
-            time="18:05",
-            duration_minutes=5,
-            priority=4,
-            recurrence=RecurrenceRule(frequency="daily", times_per_day=1),
-        )
-    )
+    Task("Vet appointment", duration_minutes=60, priority="high",
+         preferred_time=600,  pet_name="Pepper", frequency="once"),        # 10 AM
+]
 
-    # Mark one task completed for today so filtering by completion status is visible.
-    # Use the scheduler method so recurring tasks spawn their next instance automatically.
-    scheduler.mark_task_complete(owner, "t3", today)  # Play time
+# ── Helper: pretty-print a task list ─────────────────────────────────────────
 
-    plan = scheduler.generate_daily_plan(owner=owner, tasks=owner.get_all_tasks(), on_date=today)
+def fmt_time(mins):
+    if mins is None:
+        return "any time "
+    h, m = divmod(mins, 60)
+    period = "AM" if h < 12 else "PM"
+    return f"{h % 12 or 12}:{m:02d} {period}"
 
-    # Deliberate overlap: two tasks at the same start time (different pets) to verify conflict detection.
-    plan.scheduled_items.append(
-        ScheduledItem(
-            pet_id="p1",
-            task_id="t2",
-            start_time=time(14, 0),
-            end_time=time(14, 20),
-            block_id="lunch",
-            reason="Demo: overlaps with Milo's task at the same time.",
-        )
-    )
-    plan.scheduled_items.append(
-        ScheduledItem(
-            pet_id="p2",
-            task_id="t6",
-            start_time=time(14, 0),
-            end_time=time(14, 15),
-            block_id="lunch",
-            reason="Demo: overlaps with Bella's task at the same time.",
-        )
-    )
-    plan.conflict_warnings = scheduler.detect_time_conflicts(plan, owner)
+def print_tasks(task_list, label):
+    print(f"\n  {label} ({len(task_list)} task(s))")
+    print("  " + DIV2)
+    if not task_list:
+        print("  (none)")
+        return
+    for t in task_list:
+        due  = f"  due {t.due_date}" if t.due_date else ""
+        done = " ✓" if t.completed else ""
+        print(f"  {'✓' if t.completed else '·'} [{t.priority:<6}] "
+              f"{t.title:<22} {fmt_time(t.preferred_time):<11}"
+              f"pet={t.pet_name or '—':<8} freq={t.frequency}{due}{done}")
 
-    print("\nSort tasks by time (HH:MM)")
-    print("=" * 26)
-    due_today = [t for t in owner.get_all_tasks() if t.is_due_on(today)]
-    for t in scheduler.sort_by_time(due_today):
-        pet = owner.get_pet(t.pet_id)
-        pet_label = pet.name if pet else t.pet_id
-        due = t.due_date.isoformat() if t.due_date else "today"
-        print(f"- {t.time or '--:--'}  {pet_label}: {t.name} (due {due})")
+scheduler = Scheduler(pet=mochi, tasks=tasks)
 
-    print("\nFilter: Bella's pending tasks")
-    print("=" * 29)
-    for t in scheduler.filter_tasks(owner, owner.get_all_tasks(), on_date=today, completed=False, pet_name="Bella"):
-        print(f"- {t.time or '--:--'}  {t.name}")
+# ── 3. Sorting ────────────────────────────────────────────────────────────────
 
-    print("\nFilter: completed tasks (today)")
-    print("=" * 31)
-    for t in scheduler.filter_tasks(owner, owner.get_all_tasks(), on_date=today, completed=True):
-        pet = owner.get_pet(t.pet_id)
-        pet_label = pet.name if pet else t.pet_id
-        print(f"- {pet_label}: {t.name}")
+print("\n" + DIV)
+print("  STEP 1 & 2  --  SORTING")
+print(DIV)
+print("\n  sort_by_priority() key: lambda t: (-t.priority_rank, t.duration_minutes)")
+print("  sort_by_time()     key: lambda t: t.preferred_time  (integers, None last)")
 
-    print("\nSchedule conflicts (warnings)")
-    print("=" * 28)
-    if plan.conflict_warnings:
-        for w in plan.conflict_warnings:
-            print(w)
-    else:
-        print("(none)")
+print_tasks(scheduler.sort_by_priority(), "Sorted by PRIORITY (high → low, shortest first)")
+print_tasks(scheduler.sort_by_time(),     "Sorted by TIME     (earliest preferred_time first)")
 
-    print("\nToday's Schedule")
-    print("=" * 16)
+# ── 4. Filtering ─────────────────────────────────────────────────────────────
 
-    rows = plan.to_display_rows(owner)
-    if not rows:
-        print("No tasks scheduled for today.")
-    else:
-        for r in rows:
-            print(f"- {r['time']}  [{r['block']}]")
-            print(f"  {r['pet']}: {r['task']} ({r['category']}, {r['duration_min']} min, priority={r['priority']})")
-            if r["reason"]:
-                print(f"  Reason: {r['reason']}")
+print("\n" + DIV)
+print("  STEP 2  --  FILTERING")
+print(DIV)
 
-    if plan.unscheduled_tasks:
-        print("\nUnscheduled tasks")
-        print("=" * 16)
-        for t in plan.unscheduled_tasks:
-            print(f"- {t.name} (pet_id={t.pet_id}, {t.duration_minutes} min, priority={t.priority})")
+print_tasks(scheduler.filter_by_completion(False), "Pending tasks  (filter_by_completion=False)")
+print_tasks(scheduler.filter_by_completion(True),  "Done tasks     (filter_by_completion=True)")
+print_tasks(scheduler.filter_by_pet("Mochi"),      "Mochi's tasks  (filter_by_pet)")
+print_tasks(scheduler.filter_by_pet("Pepper"),     "Pepper's tasks (filter_by_pet)")
 
+# ── 5. Recurring tasks ───────────────────────────────────────────────────────
 
-if __name__ == "__main__":
-    main()
+print("\n" + DIV)
+print("  STEP 3  --  RECURRING TASK AUTO-SPAWN (timedelta)")
+print(DIV)
 
+for task in [t for t in tasks if t.frequency in ("daily", "weekly")]:
+    next_task = task.mark_complete()
+    print(f"\n  Completed : '{task.title}'  (freq={task.frequency}, due {task.due_date})")
+    if next_task:
+        delta = (next_task.due_date - task.due_date).days
+        print(f"  Next copy : '{next_task.title}'  "
+              f"due {next_task.due_date}  (+{delta} day(s) via timedelta(days={delta}))")
+
+print("\n")
+print_tasks(scheduler.filter_by_completion(True),  "Now done (after recurring completions)")
+print_tasks(scheduler.filter_by_completion(False), "Still pending")
+
+# ── 6. Conflict detection ────────────────────────────────────────────────────
+
+print("\n" + DIV)
+print("  STEP 4  --  CONFLICT DETECTION")
+print(DIV)
+
+# Build two ScheduledTask objects that intentionally overlap:
+#   Task A: starts 9:00 AM, lasts 30 min → ends 9:30 AM
+#   Task B: starts 9:15 AM, lasts 20 min → ends 9:35 AM
+#   Window A (540–570) overlaps window B (555–575) ✓
+
+task_a = Task("Morning walk",  duration_minutes=30, priority="high",  pet_name="Mochi")
+task_b = Task("Brush & groom", duration_minutes=20, priority="medium", pet_name="Mochi")
+task_c = Task("Feeding",       duration_minutes=10, priority="high",  pet_name="Mochi")
+
+overlapping = [
+    ScheduledTask(task=task_a, start_minute=540),   # 9:00 AM – 9:30 AM
+    ScheduledTask(task=task_b, start_minute=555),   # 9:15 AM – 9:35 AM  ← overlaps A
+    ScheduledTask(task=task_c, start_minute=600),   # 10:00 AM – 10:10 AM ← no overlap
+]
+
+print("\n  Checking these manually placed ScheduledTasks:")
+for st in overlapping:
+    print(f"    · {st.task.title:<22} {st.start_time_str()} – {st.end_time_str()}")
+
+conflicts = scheduler.detect_conflicts(overlapping)
+
+print(f"\n  detect_conflicts() found {len(conflicts)} conflict(s):\n")
+if conflicts:
+    for w in conflicts:
+        print(f"  ⚠️  {w}")
+else:
+    print("  (none)")
+
+# Also show that build_plan() surfaces conflicts automatically
+print("\n  --- build_plan() conflict check on a plan with forced overlaps ---")
+conflict_scheduler = Scheduler(
+    pet=mochi,
+    tasks=[task_a, task_b, task_c],
+    owner=Owner(name="Jordan", available_minutes=120),
+    day_start_minute=540,   # greedy packing from 9 AM won't overlap naturally,
+)                           # so we demo detect_conflicts() directly above instead.
+
+plan = conflict_scheduler.build_plan()
+print(f"\n  Plan scheduled {len(plan.scheduled)} task(s). "
+      f"Reasoning tail (last 3 lines):")
+for line in plan.reasoning[-3:]:
+    print(f"    {line}")
+
+print("\n" + DIV + "\n")
